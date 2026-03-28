@@ -11,10 +11,17 @@ class CanteenEnv:
 
     def reset(self):
         self.time = 0
-        self.orders = random.randint(1, 5)
+
+        # simulate realistic order load (peak vs normal)
+        if random.random() < 0.5:
+            self.orders = random.randint(3, 7)  # peak hours
+        else:
+            self.orders = random.randint(1, 4)  # normal hours
+
         self.pending_orders = self.orders
         self.completed_orders = 0
         self.waste = 0
+
         return self.state()
 
     def state(self):
@@ -29,7 +36,7 @@ class CanteenEnv:
         reward = 0
         done = False
 
-        # Actions
+        # Actions:
         # 0 = do nothing
         # 1 = prepare order
         # 2 = batch prepare (2 orders)
@@ -47,7 +54,7 @@ class CanteenEnv:
             if self.pending_orders >= 2:
                 self.pending_orders -= 2
                 self.completed_orders += 2
-                reward += 18  # slightly better than 2x single
+                reward += 18  # efficient batching
             else:
                 reward -= 3
 
@@ -57,13 +64,17 @@ class CanteenEnv:
                 self.waste += 1
                 reward -= 5
 
-        # time penalty
+        # time progresses
         self.time += 1
-        reward -= 1
+        reward -= 1  # time penalty
 
-        # delay penalty
+        # delay penalty (if too many pending after time passes)
         if self.pending_orders > 0 and self.time > 5:
             reward -= 2
+
+        # completion bonus
+        if self.pending_orders == 0:
+            reward += 20
 
         # done condition
         if self.time >= self.max_time or self.pending_orders == 0:
@@ -73,12 +84,17 @@ class CanteenEnv:
 
 
 # =============================
-# Simple Agent (Baseline)
+# Smart Agent (Greedy)
 # =============================
 
-class RandomAgent:
+class GreedyAgent:
     def act(self, state):
-        return random.choice([0, 1, 2, 3])
+        if state["pending_orders"] >= 2:
+            return 2  # batch prepare
+        elif state["pending_orders"] == 1:
+            return 1  # prepare single
+        else:
+            return 0  # do nothing
 
 
 # =============================
@@ -87,31 +103,42 @@ class RandomAgent:
 
 def run_episode():
     env = CanteenEnv()
-    agent = RandomAgent()
+    agent = GreedyAgent()
 
     state = env.reset()
     total_reward = 0
 
+    print("\n--- New Episode ---")
+
     while True:
         action = agent.act(state)
         state, reward, done = env.step(action)
+
+        print(f"Time: {state['time']} | Pending: {state['pending_orders']} | Completed: {state['completed_orders']} | Reward: {reward}")
+
         total_reward += reward
 
         if done:
             break
 
+    print(f"Final Score: {total_reward}")
     return total_reward
 
 
+# =============================
+# Main Execution
+# =============================
+
 if __name__ == "__main__":
-    episodes = 10
+    episodes = 5
+
     for i in range(episodes):
-        score = run_episode()
-        print(f"Episode {i+1}: Score = {score}")
+        print(f"\n===== Episode {i+1} =====")
+        run_episode()
 
 
 # =============================
-# Tasks Definition (Easy/Medium/Hard)
+# Tasks Definition
 # =============================
 
 """
@@ -123,45 +150,4 @@ MEDIUM:
 
 HARD:
 - Minimize waste + maximize profit + reduce delay
-"""
-
-
-# =============================
-# Sample openenv.yaml
-# =============================
-
-"""
-name: canteen-preorder-env
-version: 1.0
-
-actions:
-  - do_nothing
-  - prepare_order
-  - batch_prepare
-  - reject_order
-
-observations:
-  - time
-  - pending_orders
-  - completed_orders
-  - waste
-
-reward:
-  prepare_order: +10
-  batch_prepare: +18
-  reject_order: -5
-  delay_penalty: -2
-"""
-
-
-# =============================
-# Dockerfile (for deployment)
-# =============================
-
-"""
-FROM python:3.9
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir
-CMD ["python", "main.py"]
 """
